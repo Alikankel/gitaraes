@@ -1,0 +1,2390 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Interactive Git Areas Visualizer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --font-sans: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+        --font-mono: "JetBrains Mono", monospace;
+      }
+      body {
+        font-family: var(--font-sans);
+        background-color: #0b0f19;
+        color: #e2e8f0;
+        overflow-x: hidden;
+      }
+      .font-mono-code {
+        font-family: var(--font-mono);
+      }
+      /* Custom Scrollbars */
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: rgba(15, 23, 42, 0.6);
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(71, 85, 105, 0.7);
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: rgba(100, 116, 139, 0.9);
+      }
+
+      /* Zone Glow & Styling */
+      .zone-card {
+        background: linear-gradient(
+          180deg,
+          rgba(30, 41, 59, 0.75) 0%,
+          rgba(15, 23, 42, 0.85) 100%
+        );
+        backdrop-filter: blur(12px);
+        transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      .zone-working {
+        border-top: 3px solid #f43f5e;
+      }
+      .zone-staging {
+        border-top: 3px solid #f59e0b;
+      }
+      .zone-local {
+        border-top: 3px solid #10b981;
+      }
+      .zone-remote {
+        border-top: 3px solid #8b5cf6;
+      }
+
+      .zone-highlight-rose {
+        box-shadow: 0 0 28px -4px rgba(244, 63, 94, 0.45);
+        border-color: rgba(244, 63, 94, 0.7);
+      }
+      .zone-highlight-amber {
+        box-shadow: 0 0 28px -4px rgba(245, 158, 11, 0.45);
+        border-color: rgba(245, 158, 11, 0.7);
+      }
+      .zone-highlight-emerald {
+        box-shadow: 0 0 28px -4px rgba(16, 185, 129, 0.45);
+        border-color: rgba(16, 185, 129, 0.7);
+      }
+      .zone-highlight-purple {
+        box-shadow: 0 0 28px -4px rgba(139, 92, 246, 0.45);
+        border-color: rgba(139, 92, 246, 0.7);
+      }
+
+      /* File & Commit Cards */
+      .git-item-card {
+        transition:
+          transform 0.2s ease,
+          box-shadow 0.2s ease,
+          border-color 0.2s ease;
+      }
+      .git-item-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.5);
+      }
+
+      /* Flying Clone Animation Element */
+      .flying-clone {
+        position: fixed;
+        pointer-events: none;
+        z-index: 9999;
+        transition: all 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+        box-shadow:
+          0 20px 30px -10px rgba(0, 0, 0, 0.7),
+          0 0 20px 2px var(--glow-color, rgba(56, 189, 248, 0.5));
+      }
+
+      /* Commit Node Timeline Line */
+      .commit-node-wrapper {
+        position: relative;
+      }
+      .commit-node-wrapper:not(:last-child)::after {
+        content: "";
+        position: absolute;
+        left: 19px;
+        top: 38px;
+        bottom: -14px;
+        width: 2px;
+        background: rgba(100, 116, 139, 0.4);
+        z-index: 0;
+      }
+
+      /* Pulse animation for active badges */
+      @keyframes subtlePulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.6;
+        }
+      }
+      .animate-subtle-pulse {
+        animation: subtlePulse 2s infinite ease-in-out;
+      }
+
+      /* Flow indicator banner animation */
+      @keyframes flowSlide {
+        0% {
+          background-position: 0% 50%;
+        }
+        100% {
+          background-position: 200% 50%;
+        }
+      }
+      .flow-beam {
+        background: linear-gradient(
+          90deg,
+          rgba(15, 23, 42, 0) 0%,
+          var(--beam-color, #10b981) 50%,
+          rgba(15, 23, 42, 0) 100%
+        );
+        background-size: 200% 100%;
+        animation: flowSlide 1.2s linear infinite;
+      }
+    </style>
+  </head>
+  <body
+    class="min-h-screen flex flex-col justify-between selection:bg-sky-500 selection:text-white"
+  >
+    <!-- Top Navigation & Header -->
+    <header
+      class="border-b border-slate-800/80 bg-slate-900/70 backdrop-blur-md sticky top-0 z-30"
+    >
+      <div
+        class="max-w-[1600px] mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3"
+      >
+        <div class="flex items-center gap-3">
+          <div
+            class="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-rose-600 flex items-center justify-center shadow-lg shadow-rose-950/50"
+          >
+            <i class="fa-brands fa-git-alt text-white text-2xl"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2.5">
+              <h1 class="font-bold text-lg tracking-tight text-white">
+                Git Areas Visualizer
+              </h1>
+              <span
+                class="text-xs font-mono-code uppercase px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20 flex items-center gap-1"
+              >
+                <i class="fa-solid fa-code-branch text-[10px]"></i> main
+              </span>
+            </div>
+            <p class="text-xs text-slate-400">
+              Interactive simulator for Working Directory, Staging Index, Local
+              &amp; Remote Repos
+            </p>
+          </div>
+        </div>
+
+        <!-- Sync Status & Quick Preset Scenarios -->
+        <div class="flex flex-wrap items-center gap-2">
+          <div
+            id="syncStatusBadge"
+            class="px-3 py-1.5 rounded-lg bg-slate-800/90 border border-slate-700 text-xs font-mono-code text-slate-300 flex items-center gap-2"
+          >
+            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span>origin/main: up to date</span>
+          </div>
+
+          <div class="h-5 w-[1px] bg-slate-800 mx-1 hidden sm:block"></div>
+
+          <button
+            onclick="runGuidedDemo()"
+            id="demoBtn"
+            class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-medium text-xs shadow-md shadow-indigo-950/50 flex items-center gap-1.5 transition"
+          >
+            <i class="fa-solid fa-play text-[10px]"></i>
+            <span>Auto-Play Workflow</span>
+          </button>
+
+          <button
+            onclick="simulateRemoteTeammatePush()"
+            class="px-3 py-1.5 rounded-lg bg-purple-950/60 hover:bg-purple-900/70 text-purple-300 border border-purple-700/50 font-medium text-xs flex items-center gap-1.5 transition"
+            title="Simulate a colleague pushing a new commit to GitHub/Remote"
+          >
+            <i class="fa-solid fa-cloud-arrow-down text-purple-400"></i>
+            <span>Simulate Teammate Push</span>
+          </button>
+
+          <button
+            onclick="resetEntireSandbox()"
+            class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs flex items-center gap-1 transition"
+            title="Reset Visualizer to Default State"
+          >
+            <i class="fa-solid fa-rotate-right"></i>
+            <span class="hidden md:inline">Reset Lab</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main
+      class="max-w-[1600px] w-full mx-auto px-4 py-4 flex-1 flex flex-col gap-4"
+    >
+      <!-- Control Deck / Command Toolbar -->
+      <section
+        class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 shadow-xl"
+      >
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 items-center">
+          <!-- 1. File Creation & Modification Controls -->
+          <div
+            class="lg:col-span-4 flex flex-wrap items-center gap-2 border-b lg:border-b-0 lg:border-r border-slate-800 pb-3 lg:pb-0 lg:pr-3"
+          >
+            <span
+              class="text-[11px] font-semibold uppercase tracking-wider text-rose-400 w-full flex items-center gap-1.5"
+            >
+              <i class="fa-solid fa-laptop-code"></i> 1. Edit Working Files
+            </span>
+            <button
+              onclick="createNewFile()"
+              class="flex-1 min-w-[120px] px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-medium flex items-center justify-center gap-1.5 transition active:scale-95"
+            >
+              <i class="fa-solid fa-file-circle-plus text-rose-400"></i>
+              <span>New File</span>
+            </button>
+            <button
+              onclick="modifyExistingFile()"
+              class="flex-1 min-w-[120px] px-3 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-medium flex items-center justify-center gap-1.5 transition active:scale-95"
+            >
+              <i class="fa-solid fa-pen-to-square text-amber-400"></i>
+              <span>Modify File</span>
+            </button>
+          </div>
+
+          <!-- 2. Core Git Commands (Add & Commit) -->
+          <div
+            class="lg:col-span-5 flex flex-wrap items-center gap-2 border-b lg:border-b-0 lg:border-r border-slate-800 pb-3 lg:pb-0 lg:pr-3"
+          >
+            <span
+              class="text-[11px] font-semibold uppercase tracking-wider text-amber-400 w-full flex items-center justify-between"
+            >
+              <span
+                ><i class="fa-solid fa-layer-group"></i> 2. Stage &amp;
+                Commit</span
+              >
+              <span class="text-[10px] text-slate-400 font-normal"
+                >Click individual files or stage all</span
+              >
+            </span>
+
+            <button
+              onclick="gitAddAll()"
+              class="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs shadow-lg shadow-amber-950/50 flex items-center gap-1.5 transition active:scale-95"
+            >
+              <i class="fa-solid fa-plus"></i>
+              <span class="font-mono-code">git add .</span>
+            </button>
+
+            <div
+              class="flex-1 flex items-center bg-slate-950/90 border border-slate-700/80 rounded-xl overflow-hidden focus-within:border-emerald-500/70 transition min-w-[210px]"
+            >
+              <input
+                id="commitMsgInput"
+                type="text"
+                placeholder="Commit message (e.g. feat: add auth)"
+                class="bg-transparent text-xs text-white px-3 py-2 w-full focus:outline-none font-mono-code"
+                onkeydown="if (event.key === 'Enter') gitCommit();"
+              />
+              <button
+                onclick="gitCommit()"
+                class="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs flex items-center gap-1.5 shrink-0 transition active:scale-95"
+              >
+                <i class="fa-solid fa-check-double"></i>
+                <span class="font-mono-code">commit</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 3. Remote Sync & Undo Controls -->
+          <div class="lg:col-span-3 flex flex-wrap items-center gap-2">
+            <span
+              class="text-[11px] font-semibold uppercase tracking-wider text-purple-400 w-full flex items-center gap-1.5"
+            >
+              <i class="fa-solid fa-cloud-bolt"></i> 3. Remote &amp; Reset
+            </span>
+            <button
+              onclick="gitPush()"
+              class="flex-1 px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs shadow-lg shadow-purple-950/50 flex items-center justify-center gap-1.5 transition active:scale-95"
+            >
+              <i class="fa-solid fa-cloud-arrow-up"></i>
+              <span class="font-mono-code">git push</span>
+            </button>
+            <button
+              onclick="gitPull()"
+              class="flex-1 px-3 py-2 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 font-semibold text-xs flex items-center justify-center gap-1.5 transition active:scale-95"
+            >
+              <i class="fa-solid fa-cloud-arrow-down"></i>
+              <span class="font-mono-code">git pull</span>
+            </button>
+            <div class="relative group">
+              <button
+                class="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-mono-code flex items-center gap-1 transition"
+              >
+                <i class="fa-solid fa-rotate-left text-rose-400"></i>
+                <span>reset</span>
+                <i class="fa-solid fa-chevron-down text-[9px] ml-0.5"></i>
+              </button>
+              <!-- Dropdown menu for git reset options -->
+              <div
+                class="absolute right-0 mt-1.5 w-60 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-1.5 hidden group-hover:block z-50"
+              >
+                <div
+                  class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 px-2.5 py-1"
+                >
+                  Undo / Reset Commands
+                </div>
+                <button
+                  onclick="gitResetUnstage()"
+                  class="w-full text-left px-2.5 py-2 rounded-lg hover:bg-slate-800 text-xs flex flex-col gap-0.5 transition"
+                >
+                  <span class="font-mono-code text-amber-400 font-medium"
+                    >git reset HEAD</span
+                  >
+                  <span class="text-[11px] text-slate-400"
+                    >Unstage files back to Working Dir</span
+                  >
+                </button>
+                <button
+                  onclick="gitResetSoft()"
+                  class="w-full text-left px-2.5 py-2 rounded-lg hover:bg-slate-800 text-xs flex flex-col gap-0.5 transition"
+                >
+                  <span class="font-mono-code text-emerald-400 font-medium"
+                    >git reset --soft HEAD~1</span
+                  >
+                  <span class="text-[11px] text-slate-400"
+                    >Undo last commit, keep changes staged</span
+                  >
+                </button>
+                <button
+                  onclick="gitCheckoutDiscard()"
+                  class="w-full text-left px-2.5 py-2 rounded-lg hover:bg-slate-800 text-xs flex flex-col gap-0.5 transition"
+                >
+                  <span class="font-mono-code text-rose-400 font-medium"
+                    >git checkout -- .</span
+                  >
+                  <span class="text-[11px] text-slate-400"
+                    >Discard unstaged modifications</span
+                  >
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active Command Animated Banner -->
+        <div
+          id="commandFlowBanner"
+          class="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-xs"
+        >
+          <div class="flex items-center gap-2">
+            <span
+              id="activeCmdPill"
+              class="px-2.5 py-0.5 rounded-md bg-slate-800 text-sky-400 font-mono-code font-semibold border border-slate-700"
+            >
+              READY
+            </span>
+            <span id="activeCmdDescription" class="text-slate-300">
+              Modify or create a file in your Working Directory, or click a file
+              card to stage it.
+            </span>
+          </div>
+          <div
+            class="hidden md:flex items-center gap-4 text-[11px] text-slate-400"
+          >
+            <span class="flex items-center gap-1.5"
+              ><span class="w-2 h-2 rounded-full bg-rose-500"></span> Untracked
+              / Modified</span
+            >
+            <span class="flex items-center gap-1.5"
+              ><span class="w-2 h-2 rounded-full bg-amber-500"></span> Staged
+              (Index)</span
+            >
+            <span class="flex items-center gap-1.5"
+              ><span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+              Committed</span
+            >
+          </div>
+        </div>
+      </section>
+
+      <!-- Four Git Areas Columns -->
+      <section
+        class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 flex-1 min-h-[420px]"
+      >
+        <!-- ZONE 1: WORKING DIRECTORY -->
+        <div
+          id="zone-working"
+          class="zone-card zone-working rounded-2xl border border-slate-800/90 flex flex-col justify-between overflow-hidden shadow-lg"
+        >
+          <div>
+            <!-- Zone Header -->
+            <div
+              class="p-3.5 border-b border-slate-800/80 bg-slate-900/50 flex items-center justify-between"
+            >
+              <div class="flex items-center gap-2.5">
+                <div
+                  class="w-8 h-8 rounded-lg bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400"
+                >
+                  <i class="fa-solid fa-folder-open"></i>
+                </div>
+                <div>
+                  <h2
+                    class="font-bold text-sm text-white flex items-center gap-2"
+                  >
+                    Working Directory
+                  </h2>
+                  <p class="text-[11px] text-slate-400">
+                    Local filesystem on disk
+                  </p>
+                </div>
+              </div>
+              <span
+                id="count-working"
+                class="px-2.5 py-0.5 rounded-full text-xs font-mono-code font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30"
+              >
+                0
+              </span>
+            </div>
+
+            <!-- Sub-instruction -->
+            <div
+              class="px-3.5 py-2 bg-slate-950/40 border-b border-slate-800/50 flex items-center justify-between text-[11px] text-slate-400"
+            >
+              <span>Unstaged &amp; tracked files</span>
+              <span class="font-mono-code text-rose-400">git add &rarr;</span>
+            </div>
+          </div>
+
+          <!-- File List Container -->
+          <div
+            id="list-working"
+            class="p-3 space-y-2.5 flex-1 overflow-y-auto max-h-[380px]"
+          >
+            <!-- Populated dynamically by JS -->
+          </div>
+
+          <!-- Zone Footer -->
+          <div
+            class="px-3.5 py-2.5 bg-slate-950/60 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400"
+          >
+            <span
+              >Click
+              <kbd
+                class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono-code"
+                >+</kbd
+              >
+              on any dirty file to stage</span
+            >
+            <button
+              onclick="gitAddAll()"
+              class="text-rose-400 hover:text-rose-300 font-mono-code font-medium transition"
+            >
+              Stage All &rarr;
+            </button>
+          </div>
+        </div>
+
+        <!-- ZONE 2: STAGING AREA / INDEX -->
+        <div
+          id="zone-staging"
+          class="zone-card zone-staging rounded-2xl border border-slate-800/90 flex flex-col justify-between overflow-hidden shadow-lg"
+        >
+          <div>
+            <!-- Zone Header -->
+            <div
+              class="p-3.5 border-b border-slate-800/80 bg-slate-900/50 flex items-center justify-between"
+            >
+              <div class="flex items-center gap-2.5">
+                <div
+                  class="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400"
+                >
+                  <i class="fa-solid fa-boxes-packing"></i>
+                </div>
+                <div>
+                  <h2
+                    class="font-bold text-sm text-white flex items-center gap-2"
+                  >
+                    Staging Area
+                    <span
+                      class="text-[10px] font-mono-code font-normal px-1.5 py-0.2 bg-slate-800 text-amber-300 rounded"
+                      >.git/index</span
+                    >
+                  </h2>
+                  <p class="text-[11px] text-slate-400">
+                    Snapshot ready for next commit
+                  </p>
+                </div>
+              </div>
+              <span
+                id="count-staging"
+                class="px-2.5 py-0.5 rounded-full text-xs font-mono-code font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30"
+              >
+                0
+              </span>
+            </div>
+
+            <!-- Sub-instruction -->
+            <div
+              class="px-3.5 py-2 bg-slate-950/40 border-b border-slate-800/50 flex items-center justify-between text-[11px] text-slate-400"
+            >
+              <span>Staged changes</span>
+              <span class="font-mono-code text-amber-400"
+                >git commit &rarr;</span
+              >
+            </div>
+          </div>
+
+          <!-- Staged Files Container -->
+          <div
+            id="list-staging"
+            class="p-3 space-y-2.5 flex-1 overflow-y-auto max-h-[380px]"
+          >
+            <!-- Populated dynamically by JS -->
+          </div>
+
+          <!-- Zone Footer -->
+          <div
+            class="px-3.5 py-2.5 bg-slate-950/60 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400"
+          >
+            <button
+              onclick="gitResetUnstage()"
+              class="text-slate-400 hover:text-amber-300 font-mono-code transition"
+            >
+              &larr; Unstage All
+            </button>
+            <button
+              onclick="gitCommit()"
+              class="text-amber-400 hover:text-amber-300 font-mono-code font-medium transition"
+            >
+              Commit Snapshot &rarr;
+            </button>
+          </div>
+        </div>
+
+        <!-- ZONE 3: LOCAL REPOSITORY -->
+        <div
+          id="zone-local"
+          class="zone-card zone-local rounded-2xl border border-slate-800/90 flex flex-col justify-between overflow-hidden shadow-lg"
+        >
+          <div>
+            <!-- Zone Header -->
+            <div
+              class="p-3.5 border-b border-slate-800/80 bg-slate-900/50 flex items-center justify-between"
+            >
+              <div class="flex items-center gap-2.5">
+                <div
+                  class="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400"
+                >
+                  <i class="fa-solid fa-database"></i>
+                </div>
+                <div>
+                  <h2
+                    class="font-bold text-sm text-white flex items-center gap-2"
+                  >
+                    Local Repository
+                    <span
+                      class="text-[10px] font-mono-code font-normal px-1.5 py-0.2 bg-slate-800 text-emerald-300 rounded"
+                      >.git/objects</span
+                    >
+                  </h2>
+                  <p class="text-[11px] text-slate-400">
+                    Local commit history (<span
+                      class="font-mono-code text-emerald-400"
+                      >HEAD</span
+                    >)
+                  </p>
+                </div>
+              </div>
+              <span
+                id="count-local"
+                class="px-2.5 py-0.5 rounded-full text-xs font-mono-code font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+              >
+                0
+              </span>
+            </div>
+
+            <!-- Sub-instruction -->
+            <div
+              class="px-3.5 py-2 bg-slate-950/40 border-b border-slate-800/50 flex items-center justify-between text-[11px] text-slate-400"
+            >
+              <span>Immutable commit graph</span>
+              <span class="font-mono-code text-emerald-400"
+                >git push &rarr;</span
+              >
+            </div>
+          </div>
+
+          <!-- Local Commits Container -->
+          <div
+            id="list-local"
+            class="p-3 space-y-3 flex-1 overflow-y-auto max-h-[380px]"
+          >
+            <!-- Populated dynamically by JS -->
+          </div>
+
+          <!-- Zone Footer -->
+          <div
+            class="px-3.5 py-2.5 bg-slate-950/60 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400"
+          >
+            <span id="unpushedCounter" class="font-mono-code text-emerald-400"
+              >0 unpushed commits</span
+            >
+            <button
+              onclick="gitPush()"
+              class="text-emerald-400 hover:text-emerald-300 font-mono-code font-medium transition"
+            >
+              Push to Origin &rarr;
+            </button>
+          </div>
+        </div>
+
+        <!-- ZONE 4: REMOTE REPOSITORY -->
+        <div
+          id="zone-remote"
+          class="zone-card zone-remote rounded-2xl border border-slate-800/90 flex flex-col justify-between overflow-hidden shadow-lg"
+        >
+          <div>
+            <!-- Zone Header -->
+            <div
+              class="p-3.5 border-b border-slate-800/80 bg-slate-900/50 flex items-center justify-between"
+            >
+              <div class="flex items-center gap-2.5">
+                <div
+                  class="w-8 h-8 rounded-lg bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-400"
+                >
+                  <i class="fa-solid fa-cloud"></i>
+                </div>
+                <div>
+                  <h2
+                    class="font-bold text-sm text-white flex items-center gap-2"
+                  >
+                    Remote Repository
+                    <span
+                      class="text-[10px] font-mono-code font-normal px-1.5 py-0.2 bg-slate-800 text-purple-300 rounded"
+                      >origin/main</span
+                    >
+                  </h2>
+                  <p class="text-[11px] text-slate-400">
+                    GitHub / GitLab cloud server
+                  </p>
+                </div>
+              </div>
+              <span
+                id="count-remote"
+                class="px-2.5 py-0.5 rounded-full text-xs font-mono-code font-semibold bg-purple-500/15 text-purple-300 border border-purple-500/30"
+              >
+                0
+              </span>
+            </div>
+
+            <!-- Sub-instruction -->
+            <div
+              class="px-3.5 py-2 bg-slate-950/40 border-b border-slate-800/50 flex items-center justify-between text-[11px] text-slate-400"
+            >
+              <span class="font-mono-code text-purple-400"
+                >&larr; git pull</span
+              >
+              <span>Shared team history</span>
+            </div>
+          </div>
+
+          <!-- Remote Commits Container -->
+          <div
+            id="list-remote"
+            class="p-3 space-y-3 flex-1 overflow-y-auto max-h-[380px]"
+          >
+            <!-- Populated dynamically by JS -->
+          </div>
+
+          <!-- Zone Footer -->
+          <div
+            class="px-3.5 py-2.5 bg-slate-950/60 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400"
+          >
+            <button
+              onclick="gitPull()"
+              class="text-purple-400 hover:text-purple-300 font-mono-code font-medium transition"
+            >
+              &larr; Pull to Local
+            </button>
+            <button
+              onclick="simulateRemoteTeammatePush()"
+              class="text-slate-400 hover:text-purple-300 font-mono-code transition"
+            >
+              + Teammate Commit
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Bottom Interactive Terminal & Git Inspector -->
+      <section class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <!-- Interactive Terminal Console -->
+        <div
+          class="lg:col-span-8 bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[225px]"
+        >
+          <!-- Terminal Title Bar -->
+          <div
+            class="px-4 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between"
+          >
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-rose-500/80"></span>
+              <span class="w-3 h-3 rounded-full bg-amber-500/80"></span>
+              <span class="w-3 h-3 rounded-full bg-emerald-500/80"></span>
+              <span
+                class="ml-2 text-xs font-mono-code text-slate-400 flex items-center gap-1.5"
+              >
+                <i class="fa-solid fa-terminal text-sky-400"></i>
+                bash &mdash; git-visualizer-repo (main)
+              </span>
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                onclick="runTerminalCommand('git status')"
+                class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono-code text-slate-300 transition"
+              >
+                git status
+              </button>
+              <button
+                onclick="runTerminalCommand('git log --oneline')"
+                class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono-code text-slate-300 transition"
+              >
+                git log
+              </button>
+              <button
+                onclick="clearTerminal()"
+                class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono-code text-slate-400 transition"
+              >
+                clear
+              </button>
+            </div>
+          </div>
+
+          <!-- Terminal Log Output -->
+          <div
+            id="terminalOutput"
+            class="p-3.5 font-mono-code text-xs space-y-1.5 flex-1 overflow-y-auto"
+          >
+            <!-- Populated by JS -->
+          </div>
+
+          <!-- Interactive CLI Prompt -->
+          <div
+            class="px-3.5 py-2 bg-slate-900/70 border-t border-slate-800/80 flex items-center gap-2"
+          >
+            <span
+              class="font-mono-code text-xs text-emerald-400 font-semibold shrink-0"
+              >dev@git-lab:~/app (main)$</span
+            >
+            <input
+              id="terminalInput"
+              type="text"
+              placeholder="Type a command: git status, git add ., git commit -m 'msg', git push, git pull, git reset, touch app.js..."
+              class="w-full bg-transparent text-xs font-mono-code text-white focus:outline-none"
+              onkeydown="handleTerminalKey(event)"
+            />
+            <button
+              onclick="submitTerminalInput()"
+              class="px-2.5 py-1 rounded bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 text-[11px] font-mono-code shrink-0 transition"
+            >
+              Run &crarr;
+            </button>
+          </div>
+        </div>
+
+        <!-- Live Git Concept Explainer / Cheat Sheet Card -->
+        <div
+          class="lg:col-span-4 bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between h-[225px]"
+        >
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <span
+                class="text-xs font-bold uppercase tracking-wider text-sky-400 flex items-center gap-1.5"
+              >
+                <i class="fa-solid fa-circle-info"></i> Under the Hood Inspector
+              </span>
+              <span
+                id="inspectorBadge"
+                class="text-[11px] font-mono-code px-2 py-0.5 rounded bg-slate-800 text-slate-300"
+              >
+                Architecture
+              </span>
+            </div>
+            <h3 id="inspectorTitle" class="text-sm font-bold text-white mb-1">
+              How the 4 Git Areas Work Together
+            </h3>
+            <p
+              id="inspectorBody"
+              class="text-xs text-slate-300 leading-relaxed"
+            >
+              Files you edit live in the
+              <strong class="text-rose-400">Working Directory</strong>. Running
+              <code class="text-amber-300 font-mono-code">git add</code> copies
+              their current content into the
+              <strong class="text-amber-400">Staging Index</strong>. Running
+              <code class="text-emerald-300 font-mono-code">git commit</code>
+              permanently records that staged snapshot as a SHA-1 commit node
+              inside <strong class="text-emerald-400">Local Repo</strong>, and
+              <code class="text-purple-300 font-mono-code">git push</code>
+              uploads new commits to
+              <strong class="text-purple-400">Remote</strong>.
+            </p>
+          </div>
+
+          <!-- Mini Pipeline Diagram -->
+          <div
+            class="pt-3 border-t border-slate-800/80 grid grid-cols-4 gap-1.5 text-center text-[10px] font-mono-code"
+          >
+            <div
+              class="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300"
+            >
+              1. Working
+            </div>
+            <div
+              class="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300"
+            >
+              2. Stage
+            </div>
+            <div
+              class="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300"
+            >
+              3. Local
+            </div>
+            <div
+              class="p-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-300"
+            >
+              4. Remote
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Commit Snapshot Modal (when clicking a commit node) -->
+    <div
+      id="commitModal"
+      class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm hidden items-center justify-center z-50 p-4"
+    >
+      <div
+        class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-5 shadow-2xl"
+      >
+        <div
+          class="flex items-center justify-between pb-3 border-b border-slate-800"
+        >
+          <div class="flex items-center gap-2">
+            <i class="fa-solid fa-code-commit text-emerald-400 text-lg"></i>
+            <h3
+              id="modalCommitHash"
+              class="font-mono-code font-bold text-white text-sm"
+            >
+              Commit #a1b2c3d
+            </h3>
+          </div>
+          <button
+            onclick="closeCommitModal()"
+            class="text-slate-400 hover:text-white text-sm px-2 py-1 rounded-lg hover:bg-slate-800"
+          >
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+        <div class="py-3 space-y-3 text-xs">
+          <div>
+            <div class="text-slate-400 text-[11px] uppercase font-semibold">
+              Message
+            </div>
+            <div
+              id="modalCommitMsg"
+              class="text-white font-medium text-sm mt-0.5"
+            ></div>
+          </div>
+          <div class="flex gap-6">
+            <div>
+              <div class="text-slate-400 text-[11px] uppercase font-semibold">
+                Author
+              </div>
+              <div
+                id="modalCommitAuthor"
+                class="text-slate-300 font-mono-code mt-0.5"
+              ></div>
+            </div>
+            <div>
+              <div class="text-slate-400 text-[11px] uppercase font-semibold">
+                Timestamp
+              </div>
+              <div
+                id="modalCommitTime"
+                class="text-slate-300 font-mono-code mt-0.5"
+              ></div>
+            </div>
+          </div>
+          <div>
+            <div
+              class="text-slate-400 text-[11px] uppercase font-semibold mb-1.5"
+            >
+              Files in Commit Snapshot
+            </div>
+            <div
+              id="modalCommitFiles"
+              class="space-y-1.5 max-h-44 overflow-y-auto pr-1"
+            ></div>
+          </div>
+        </div>
+        <div class="pt-3 border-t border-slate-800 flex justify-end">
+          <button
+            onclick="closeCommitModal()"
+            class="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium"
+          >
+            Close Inspector
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      /********************************************************************
+       * STATE MANAGEMENT & SAMPLE DATA
+       ********************************************************************/
+      const SAMPLE_FILE_POOL = [
+        {
+          name: "auth.ts",
+          icon: "fa-shield-halved",
+          snippet: "+ export function verifyJWT(token)",
+        },
+        {
+          name: "api.js",
+          icon: "fa-plug",
+          snippet: '+ fetch("/api/v2/users")',
+        },
+        {
+          name: "Navbar.tsx",
+          icon: "fa-compass",
+          snippet: '+ <nav className="sticky top-0">',
+        },
+        {
+          name: "schema.sql",
+          icon: "fa-database",
+          snippet: "+ CREATE TABLE sessions (...)",
+        },
+        {
+          name: "README.md",
+          icon: "fa-book-open",
+          snippet: "+ ## Installation & Quickstart",
+        },
+        {
+          name: "Dockerfile",
+          icon: "fa-brands fa-docker",
+          snippet: "+ FROM node:20-alpine",
+        },
+        {
+          name: "theme.css",
+          icon: "fa-palette",
+          snippet: "+ :root { --accent: #38bdf8; }",
+        },
+        {
+          name: "utils.py",
+          icon: "fa-brands fa-python",
+          snippet: "+ def parse_iso_date(val):",
+        },
+      ];
+
+      const SAMPLE_MOD_SNIPPETS = [
+        "~ refactored async error handler (+14 -3)",
+        "~ optimized query caching logic (+8 -2)",
+        "~ updated responsive flex layout (+19 -6)",
+        "~ patched validation edge-case (+5 -1)",
+        "~ added unit test assertions (+22 -0)",
+      ];
+
+      let state = {
+        workingFiles: [],
+        stagedFiles: [],
+        localCommits: [],
+        remoteCommits: [],
+        isAnimating: false,
+        demoRunning: false,
+      };
+
+      // Initialize default sandbox state
+      function initDefaultState() {
+        const initialCommit = {
+          hash: "7c4f9a1",
+          message: "chore: initial project scaffold",
+          author: "you <dev@local>",
+          time: "10 mins ago",
+          files: [
+            {
+              name: "index.html",
+              status: "committed",
+              snippet: "<!DOCTYPE html><html>...",
+            },
+            {
+              name: "styles.css",
+              status: "committed",
+              snippet: "body { margin: 0; }",
+            },
+          ],
+        };
+
+        state.workingFiles = [
+          {
+            id: "file-1",
+            name: "index.html",
+            icon: "fa-code",
+            status: "modified", // 'untracked' | 'modified' | 'clean'
+            snippet: "~ added hero banner section (+12 -2)",
+            version: 2,
+          },
+          {
+            id: "file-2",
+            name: "app.js",
+            icon: "fa-brands fa-js",
+            status: "untracked",
+            snippet: '+ console.log("App initialized");',
+            version: 1,
+          },
+          {
+            id: "file-3",
+            name: "styles.css",
+            icon: "fa-css3-alt",
+            status: "clean",
+            snippet: "  body { background: #0b0f19; }",
+            version: 1,
+          },
+        ];
+
+        state.stagedFiles = [];
+        state.localCommits = [structuredClone(initialCommit)];
+        state.remoteCommits = [structuredClone(initialCommit)];
+      }
+
+      /********************************************************************
+       * FLYING CARD ANIMATION ENGINE
+       ********************************************************************/
+      function animateCardFlight(
+        sourceEl,
+        targetContainerEl,
+        glowColorHex,
+        customLabel = null,
+      ) {
+        return new Promise((resolve) => {
+          if (!sourceEl || !targetContainerEl) {
+            resolve();
+            return;
+          }
+
+          const srcRect = sourceEl.getBoundingClientRect();
+          const destRect = targetContainerEl.getBoundingClientRect();
+
+          // Create floating visual clone
+          const clone = sourceEl.cloneNode(true);
+          clone.classList.add("flying-clone");
+          clone.style.setProperty("--glow-color", glowColorHex);
+          clone.style.width = `${Math.min(srcRect.width, 280)}px`;
+          clone.style.left = `${srcRect.left}px`;
+          clone.style.top = `${srcRect.top}px`;
+          clone.style.opacity = "0.96";
+          clone.style.transform = "scale(1.03) rotate(-1deg)";
+
+          if (customLabel) {
+            const badge = document.createElement("div");
+            badge.className =
+              "mt-1 text-[10px] font-mono-code px-2 py-0.5 rounded bg-slate-950/90 text-white border border-white/20 inline-block";
+            badge.textContent = customLabel;
+            clone.appendChild(badge);
+          }
+
+          document.body.appendChild(clone);
+
+          // Calculate target coordinates inside destination zone
+          const targetX =
+            destRect.left + (destRect.width - Math.min(srcRect.width, 280)) / 2;
+          const targetY = destRect.top + 36;
+
+          // Trigger reflow & animate to destination
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              clone.style.left = `${targetX}px`;
+              clone.style.top = `${targetY}px`;
+              clone.style.transform = "scale(0.92) rotate(0deg)";
+              clone.style.opacity = "0.35";
+            });
+          });
+
+          setTimeout(() => {
+            clone.remove();
+            resolve();
+          }, 650);
+        });
+      }
+
+      function pulseZone(zoneId, highlightClass) {
+        const zone = document.getElementById(zoneId);
+        if (!zone) return;
+        zone.classList.add(highlightClass);
+        setTimeout(() => zone.classList.remove(highlightClass), 950);
+      }
+
+      /********************************************************************
+       * RENDER UI ACROSS ALL 4 GIT ZONES
+       ********************************************************************/
+      function renderAllZones() {
+        renderWorkingDirectory();
+        renderStagingArea();
+        renderLocalRepository();
+        renderRemoteRepository();
+        updateSyncIndicators();
+      }
+
+      function renderWorkingDirectory() {
+        const container = document.getElementById("list-working");
+        const dirtyCount = state.workingFiles.filter(
+          (f) => f.status !== "clean",
+        ).length;
+        document.getElementById("count-working").textContent =
+          `${dirtyCount} dirty / ${state.workingFiles.length} total`;
+
+        if (state.workingFiles.length === 0) {
+          container.innerHTML = `
+                    <div class="h-44 border border-dashed border-slate-800 rounded-xl flex flex-col items-center justify-center text-center p-4 text-slate-500">
+                        <i class="fa-regular fa-folder-open text-2xl mb-2 text-slate-600"></i>
+                        <p class="text-xs">Working directory is empty.</p>
+                        <p class="text-[11px] mt-1">Click <strong>New File</strong> to create one.</p>
+                    </div>`;
+          return;
+        }
+
+        // Sort dirty files first so untracked/modified are prominent
+        const sortedFiles = [...state.workingFiles].sort((a, b) => {
+          if (a.status === "clean" && b.status !== "clean") return 1;
+          if (a.status !== "clean" && b.status === "clean") return -1;
+          return 0;
+        });
+
+        container.innerHTML = sortedFiles
+          .map((file) => {
+            const isUntracked = file.status === "untracked";
+            const isModified = file.status === "modified";
+            const isClean = file.status === "clean";
+
+            let badgeHtml = "";
+            let cardBorder = "border-slate-800 bg-slate-900/60 opacity-75";
+            let actionBtn = "";
+
+            if (isUntracked) {
+              badgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-mono-code font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/30">U &bull; untracked</span>`;
+              cardBorder = "border-rose-500/40 bg-rose-950/20";
+              actionBtn = `
+                        <button onclick="gitAddSingleFile('${file.id}')" title="Stage this file (git add ${file.name})"
+                            class="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 border border-amber-500/40 text-xs font-mono-code font-semibold transition flex items-center gap-1">
+                            <i class="fa-solid fa-plus text-[10px]"></i> add
+                        </button>`;
+            } else if (isModified) {
+              badgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-mono-code font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">M &bull; modified</span>`;
+              cardBorder = "border-amber-500/40 bg-amber-950/15";
+              actionBtn = `
+                        <button onclick="gitAddSingleFile('${file.id}')" title="Stage this file (git add ${file.name})"
+                            class="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 border border-amber-500/40 text-xs font-mono-code font-semibold transition flex items-center gap-1">
+                            <i class="fa-solid fa-plus text-[10px]"></i> add
+                        </button>`;
+            } else if (isClean) {
+              badgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-mono-code bg-slate-800 text-slate-400 border border-slate-700">tracked &bull; clean</span>`;
+              actionBtn = `
+                        <button onclick="modifySpecificFile('${file.id}')" title="Edit this file"
+                            class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-mono-code transition">
+                            <i class="fa-solid fa-pen text-[10px]"></i> edit
+                        </button>`;
+            }
+
+            return `
+                    <div id="working-card-${file.id}" class="git-item-card rounded-xl border ${cardBorder} p-2.5 flex flex-col gap-1.5">
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <i class="fa-solid ${file.icon || "fa-file-code"} text-xs ${isClean ? "text-slate-400" : "text-rose-400"}"></i>
+                                <span class="font-mono-code font-semibold text-xs text-white truncate">${file.name}</span>
+                            </div>
+                            <div class="flex items-center gap-1.5 shrink-0">
+                                ${badgeHtml}
+                                ${actionBtn}
+                            </div>
+                        </div>
+                        <div class="text-[11px] font-mono-code ${isClean ? "text-slate-500" : "text-slate-300"} bg-slate-950/70 px-2 py-1 rounded border border-slate-800/80 truncate">
+                            ${file.snippet}
+                        </div>
+                    </div>
+                `;
+          })
+          .join("");
+      }
+
+      function renderStagingArea() {
+        const container = document.getElementById("list-staging");
+        document.getElementById("count-staging").textContent =
+          `${state.stagedFiles.length} staged`;
+
+        if (state.stagedFiles.length === 0) {
+          container.innerHTML = `
+                    <div class="h-44 border border-dashed border-slate-800 rounded-xl flex flex-col items-center justify-center text-center p-4 text-slate-500">
+                        <i class="fa-solid fa-layer-group text-2xl mb-2 text-slate-600"></i>
+                        <p class="text-xs">Staging Index is empty.</p>
+                        <p class="text-[11px] mt-1">Run <code class="text-amber-400 font-mono-code">git add .</code> to stage dirty files for your next commit.</p>
+                    </div>`;
+          return;
+        }
+
+        container.innerHTML = state.stagedFiles
+          .map(
+            (file) => `
+                <div id="staged-card-${file.id}" class="git-item-card rounded-xl border border-amber-500/40 bg-amber-950/20 p-2.5 flex flex-col gap-1.5">
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <i class="fa-solid ${file.icon || "fa-file-code"} text-xs text-amber-400"></i>
+                            <span class="font-mono-code font-semibold text-xs text-white truncate">${file.name}</span>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-mono-code font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                staged
+                            </span>
+                            <button onclick="unstageSingleFile('${file.id}')" title="Unstage file (git reset HEAD ${file.name})"
+                                class="px-2 py-0.5 rounded bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 text-[11px] font-mono-code transition">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="text-[11px] font-mono-code text-amber-200/80 bg-slate-950/70 px-2 py-1 rounded border border-amber-500/20 truncate">
+                        ${file.snippet}
+                    </div>
+                </div>
+            `,
+          )
+          .join("");
+      }
+
+      function renderLocalRepository() {
+        const container = document.getElementById("list-local");
+        document.getElementById("count-local").textContent =
+          `${state.localCommits.length} commits`;
+
+        const remoteHashes = new Set(state.remoteCommits.map((c) => c.hash));
+
+        // Render newest commit at top
+        const reversed = [...state.localCommits].reverse();
+
+        container.innerHTML = reversed
+          .map((commit, idx) => {
+            const isHead = idx === 0;
+            const isSynced = remoteHashes.has(commit.hash);
+
+            return `
+                    <div id="local-commit-${commit.hash}" onclick="openCommitModal('${commit.hash}', 'local')"
+                        class="commit-node-wrapper git-item-card cursor-pointer rounded-xl border ${isHead ? "border-emerald-500/50 bg-emerald-950/20" : "border-slate-800 bg-slate-900/70"} p-2.5 flex items-start gap-2.5">
+                        <div class="w-5 h-5 rounded-full ${isHead ? "bg-emerald-500 text-slate-950" : "bg-slate-800 text-emerald-400 border border-emerald-500/40"} flex items-center justify-center text-[10px] shrink-0 mt-0.5 z-10">
+                            <i class="fa-solid fa-code-commit"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center justify-between gap-1 flex-wrap">
+                                <span class="font-mono-code text-xs font-bold text-emerald-400">#${commit.hash}</span>
+                                <div class="flex items-center gap-1">
+                                    ${isHead ? `<span class="px-1.5 py-0.2 rounded text-[10px] font-mono-code font-bold bg-emerald-500 text-slate-950">HEAD &rarr; main</span>` : ""}
+                                    ${!isSynced ? `<span class="px-1.5 py-0.2 rounded text-[10px] font-mono-code bg-amber-500/20 text-amber-300 border border-amber-500/30">unpushed</span>` : ""}
+                                </div>
+                            </div>
+                            <p class="text-xs font-medium text-white truncate mt-1">${commit.message}</p>
+                            <div class="flex items-center justify-between text-[10px] text-slate-400 mt-1.5 font-mono-code">
+                                <span><i class="fa-regular fa-file-lines mr-1"></i>${commit.files.length} file(s)</span>
+                                <span>${commit.time}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+          })
+          .join("");
+      }
+
+      function renderRemoteRepository() {
+        const container = document.getElementById("list-remote");
+        document.getElementById("count-remote").textContent =
+          `${state.remoteCommits.length} commits`;
+
+        const localHashes = new Set(state.localCommits.map((c) => c.hash));
+        const reversed = [...state.remoteCommits].reverse();
+
+        container.innerHTML = reversed
+          .map((commit, idx) => {
+            const isOriginHead = idx === 0;
+            const isPulled = localHashes.has(commit.hash);
+
+            return `
+                    <div id="remote-commit-${commit.hash}" onclick="openCommitModal('${commit.hash}', 'remote')"
+                        class="commit-node-wrapper git-item-card cursor-pointer rounded-xl border ${isOriginHead ? "border-purple-500/50 bg-purple-950/20" : "border-slate-800 bg-slate-900/70"} p-2.5 flex items-start gap-2.5">
+                        <div class="w-5 h-5 rounded-full ${isOriginHead ? "bg-purple-500 text-white" : "bg-slate-800 text-purple-400 border border-purple-500/40"} flex items-center justify-center text-[10px] shrink-0 mt-0.5 z-10">
+                            <i class="fa-solid fa-cloud"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center justify-between gap-1 flex-wrap">
+                                <span class="font-mono-code text-xs font-bold text-purple-400">#${commit.hash}</span>
+                                <div class="flex items-center gap-1">
+                                    ${isOriginHead ? `<span class="px-1.5 py-0.2 rounded text-[10px] font-mono-code font-bold bg-purple-500 text-white">origin/main</span>` : ""}
+                                    ${!isPulled ? `<span class="px-1.5 py-0.2 rounded text-[10px] font-mono-code bg-sky-500/20 text-sky-300 border border-sky-500/30 animate-subtle-pulse">incoming</span>` : ""}
+                                </div>
+                            </div>
+                            <p class="text-xs font-medium text-white truncate mt-1">${commit.message}</p>
+                            <div class="flex items-center justify-between text-[10px] text-slate-400 mt-1.5 font-mono-code">
+                                <span><i class="fa-regular fa-user mr-1"></i>${commit.author.split(" ")[0]}</span>
+                                <span>${commit.time}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+          })
+          .join("");
+      }
+
+      function updateSyncIndicators() {
+        const localHashes = new Set(state.localCommits.map((c) => c.hash));
+        const remoteHashes = new Set(state.remoteCommits.map((c) => c.hash));
+
+        const aheadCount = state.localCommits.filter(
+          (c) => !remoteHashes.has(c.hash),
+        ).length;
+        const behindCount = state.remoteCommits.filter(
+          (c) => !localHashes.has(c.hash),
+        ).length;
+
+        const unpushedEl = document.getElementById("unpushedCounter");
+        unpushedEl.textContent =
+          aheadCount > 0
+            ? `${aheadCount} commit(s) ahead of origin`
+            : "Synced with origin";
+
+        const badge = document.getElementById("syncStatusBadge");
+        if (aheadCount === 0 && behindCount === 0) {
+          badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span><span>origin/main: up to date</span>`;
+        } else {
+          const parts = [];
+          if (aheadCount > 0) parts.push(`&uarr;${aheadCount} ahead`);
+          if (behindCount > 0) parts.push(`&darr;${behindCount} behind`);
+          badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span><span class="text-amber-300">origin/main: ${parts.join(", ")}</span>`;
+        }
+      }
+
+      /********************************************************************
+       * GIT OPERATIONS & INTERACTIVE ACTIONS
+       ********************************************************************/
+      function generateShortHash() {
+        const chars = "0123456789abcdef";
+        let hash = "";
+        for (let i = 0; i < 7; i++) {
+          hash += chars[Math.floor(Math.random() * chars.length)];
+        }
+        return hash;
+      }
+
+      function updateBannerAndInspector(
+        cmd,
+        bannerDesc,
+        inspectorTitle,
+        inspectorText,
+      ) {
+        document.getElementById("activeCmdPill").textContent = cmd;
+        document.getElementById("activeCmdDescription").textContent =
+          bannerDesc;
+        document.getElementById("inspectorBadge").textContent = cmd;
+        document.getElementById("inspectorTitle").textContent = inspectorTitle;
+        document.getElementById("inspectorBody").innerHTML = inspectorText;
+      }
+
+      // 1. CREATE NEW FILE IN WORKING DIRECTORY
+      function createNewFile(customFileName = null) {
+        const existingNames = new Set(state.workingFiles.map((f) => f.name));
+        let template = SAMPLE_FILE_POOL.find((p) => !existingNames.has(p.name));
+
+        if (!template) {
+          const randomNum = Math.floor(Math.random() * 90 + 10);
+          template = {
+            name: `module_${randomNum}.js`,
+            icon: "fa-file-code",
+            snippet: `+ export const version = "${randomNum}.0";`,
+          };
+        }
+
+        const fileName = customFileName || template.name;
+        // Check if file already exists
+        const existing = state.workingFiles.find((f) => f.name === fileName);
+        if (existing) {
+          modifySpecificFile(existing.id);
+          return;
+        }
+
+        const newFile = {
+          id:
+            "file-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6),
+          name: fileName,
+          icon: template.icon || "fa-file-code",
+          status: "untracked",
+          snippet: template.snippet,
+          version: 1,
+        };
+
+        state.workingFiles.unshift(newFile);
+        pulseZone("zone-working", "zone-highlight-rose");
+        renderAllZones();
+
+        logTerminal(
+          `touch ${fileName}`,
+          `Created untracked file '${fileName}' in Working Directory.`,
+          "rose",
+        );
+        updateBannerAndInspector(
+          `touch ${fileName}`,
+          `Created new untracked file ${fileName} in Working Directory.`,
+          "Untracked File Created (Working Directory)",
+          `Git sees <code class="text-rose-300 font-mono-code">${fileName}</code> in your folder, but isn't tracking it yet. Run <code class="text-amber-300 font-mono-code">git add ${fileName}</code> or <code class="text-amber-300 font-mono-code">git add .</code> to stage it into the Index.`,
+        );
+      }
+
+      // 2. MODIFY EXISTING FILE IN WORKING DIRECTORY
+      function modifyExistingFile() {
+        if (state.workingFiles.length === 0) {
+          createNewFile();
+          return;
+        }
+        // Prefer modifying a clean file first, otherwise any file
+        const target =
+          state.workingFiles.find((f) => f.status === "clean") ||
+          state.workingFiles[0];
+        modifySpecificFile(target.id);
+      }
+
+      function modifySpecificFile(fileId) {
+        const file = state.workingFiles.find((f) => f.id === fileId);
+        if (!file) return;
+
+        if (file.status === "clean") {
+          file.status = "modified";
+        }
+        file.version = (file.version || 1) + 1;
+        file.snippet =
+          SAMPLE_MOD_SNIPPETS[
+            Math.floor(Math.random() * SAMPLE_MOD_SNIPPETS.length)
+          ];
+
+        pulseZone("zone-working", "zone-highlight-rose");
+        renderAllZones();
+
+        logTerminal(
+          `vim ${file.name}`,
+          `Modified '${file.name}' in Working Directory (unstaged changes).`,
+          "amber",
+        );
+        updateBannerAndInspector(
+          `edit ${file.name}`,
+          `Modified ${file.name} in Working Directory. Changes are unstaged.`,
+          "Modified File (Unstaged Changes)",
+          `You edited <code class="text-rose-300 font-mono-code">${file.name}</code>. Even if this file was previously committed, Git requires you to run <code class="text-amber-300 font-mono-code">git add</code> again to stage this latest version into the <strong class="text-amber-400">Staging Area</strong>.`,
+        );
+      }
+
+      // 3. GIT ADD SINGLE FILE
+      async function gitAddSingleFile(fileId) {
+        if (state.isAnimating) return;
+        const file = state.workingFiles.find((f) => f.id === fileId);
+        if (!file || file.status === "clean") return;
+
+        state.isAnimating = true;
+        const srcCard = document.getElementById(`working-card-${file.id}`);
+        const destList = document.getElementById("list-staging");
+
+        pulseZone("zone-working", "zone-highlight-rose");
+        pulseZone("zone-staging", "zone-highlight-amber");
+
+        await animateCardFlight(
+          srcCard,
+          destList,
+          "rgba(245, 158, 11, 0.7)",
+          `git add ${file.name}`,
+        );
+
+        stageFileData(file);
+        state.isAnimating = false;
+        renderAllZones();
+
+        logTerminal(
+          `git add ${file.name}`,
+          `Staged snapshot of '${file.name}' into .git/index.`,
+          "amber",
+        );
+        updateBannerAndInspector(
+          `git add ${file.name}`,
+          `Staged ${file.name} into the Staging Area (.git/index).`,
+          "git add — Staging Snapshot into Index",
+          `<code class="text-amber-300 font-mono-code">git add</code> hashes the current contents of <code class="text-white font-mono-code">${file.name}</code> into a blob and registers it in <code class="text-amber-300 font-mono-code">.git/index</code>. It is now queued for the next commit.`,
+        );
+      }
+
+      function stageFileData(file) {
+        // Copy snapshot to stagedFiles (replace if already staged)
+        const existingIdx = state.stagedFiles.findIndex(
+          (s) => s.name === file.name,
+        );
+        const stagedSnapshot = {
+          id: file.id,
+          name: file.name,
+          icon: file.icon,
+          previousStatus: file.status,
+          snippet: file.snippet,
+          version: file.version,
+        };
+
+        if (existingIdx !== -1) {
+          state.stagedFiles[existingIdx] = stagedSnapshot;
+        } else {
+          state.stagedFiles.unshift(stagedSnapshot);
+        }
+        file.status = "clean";
+      }
+
+      // 4. GIT ADD ALL (git add .)
+      async function gitAddAll() {
+        if (state.isAnimating) return;
+        const dirtyFiles = state.workingFiles.filter(
+          (f) => f.status !== "clean",
+        );
+
+        if (dirtyFiles.length === 0) {
+          logTerminal(
+            "git add .",
+            "Nothing to stage — Working Directory has no untracked or modified files.",
+            "slate",
+          );
+          updateBannerAndInspector(
+            "git add .",
+            "No modified or untracked files in Working Directory to stage.",
+            "Working Tree Clean",
+            "All files in your Working Directory match the current index. Create a new file or modify an existing one first!",
+          );
+          return;
+        }
+
+        state.isAnimating = true;
+        pulseZone("zone-working", "zone-highlight-rose");
+        pulseZone("zone-staging", "zone-highlight-amber");
+
+        const destList = document.getElementById("list-staging");
+        const flights = dirtyFiles.map((file) => {
+          const srcEl = document.getElementById(`working-card-${file.id}`);
+          return animateCardFlight(
+            srcEl,
+            destList,
+            "rgba(245, 158, 11, 0.7)",
+            `git add ${file.name}`,
+          );
+        });
+
+        await Promise.all(flights);
+
+        dirtyFiles.forEach((file) => stageFileData(file));
+        state.isAnimating = false;
+        renderAllZones();
+
+        const names = dirtyFiles.map((f) => f.name).join(", ");
+        logTerminal(
+          "git add .",
+          `Staged ${dirtyFiles.length} file(s) into Index: ${names}`,
+          "amber",
+        );
+        updateBannerAndInspector(
+          "git add .",
+          `Staged ${dirtyFiles.length} file(s) (${names}) from Working Directory to Staging Area.`,
+          "git add . — Bulk Staging to Index",
+          `All modified and untracked files in your Working Directory have been copied into the <strong class="text-amber-400">Staging Area</strong>. Next, run <code class="text-emerald-300 font-mono-code">git commit</code> to bundle them into a permanent commit node.`,
+        );
+      }
+
+      // 5. UNSTAGE SINGLE FILE
+      async function unstageSingleFile(fileId) {
+        if (state.isAnimating) return;
+        const stagedIdx = state.stagedFiles.findIndex((f) => f.id === fileId);
+        if (stagedIdx === -1) return;
+
+        const stagedFile = state.stagedFiles[stagedIdx];
+        state.isAnimating = true;
+
+        const srcEl = document.getElementById(`staged-card-${stagedFile.id}`);
+        const destList = document.getElementById("list-working");
+        await animateCardFlight(
+          srcEl,
+          destList,
+          "rgba(244, 63, 94, 0.7)",
+          `git reset ${stagedFile.name}`,
+        );
+
+        state.stagedFiles.splice(stagedIdx, 1);
+        const workFile = state.workingFiles.find(
+          (w) => w.name === stagedFile.name,
+        );
+        if (workFile) {
+          workFile.status = stagedFile.previousStatus || "modified";
+        }
+
+        state.isAnimating = false;
+        renderAllZones();
+        logTerminal(
+          `git restore --staged ${stagedFile.name}`,
+          `Unstaged '${stagedFile.name}' back to Working Directory.`,
+          "rose",
+        );
+      }
+
+      // 6. GIT COMMIT
+      async function gitCommit(customMessage = null) {
+        if (state.isAnimating) return;
+        if (state.stagedFiles.length === 0) {
+          logTerminal(
+            "git commit",
+            'nothing to commit (Staging Area is empty — run "git add ." first)',
+            "rose",
+          );
+          pulseZone("zone-staging", "zone-highlight-amber");
+          updateBannerAndInspector(
+            "git commit (blocked)",
+            "Cannot commit because the Staging Area is empty! Stage files with git add first.",
+            "Why did git commit do nothing?",
+            'Git only commits what is inside the <strong class="text-amber-400">Staging Area (.git/index)</strong>. Even if you have edited files in your Working Directory, you must run <code class="text-amber-300 font-mono-code">git add</code> before committing.',
+          );
+          return;
+        }
+
+        const inputEl = document.getElementById("commitMsgInput");
+        const commitMsg =
+          customMessage ||
+          inputEl.value.trim() ||
+          `feat: update ${state.stagedFiles.map((f) => f.name).join(", ")}`;
+
+        state.isAnimating = true;
+        pulseZone("zone-staging", "zone-highlight-amber");
+        pulseZone("zone-local", "zone-highlight-emerald");
+
+        const destList = document.getElementById("list-local");
+        const flights = state.stagedFiles.map((file) => {
+          const srcEl = document.getElementById(`staged-card-${file.id}`);
+          return animateCardFlight(
+            srcEl,
+            destList,
+            "rgba(16, 185, 129, 0.75)",
+            "snapshot -> commit",
+          );
+        });
+
+        await Promise.all(flights);
+
+        const newHash = generateShortHash();
+        const committedFiles = state.stagedFiles.map((f) => ({
+          name: f.name,
+          status: "committed",
+          snippet: f.snippet,
+        }));
+
+        const newCommit = {
+          hash: newHash,
+          message: commitMsg,
+          author: "you <dev@local>",
+          time: "Just now",
+          files: committedFiles,
+        };
+
+        state.localCommits.push(newCommit);
+        state.stagedFiles = [];
+        inputEl.value = "";
+        state.isAnimating = false;
+        renderAllZones();
+
+        logTerminal(
+          `git commit -m "${commitMsg}"`,
+          `[main ${newHash}] ${commitMsg} (${committedFiles.length} file(s) changed)`,
+          "emerald",
+        );
+        updateBannerAndInspector(
+          `git commit -m "${commitMsg}"`,
+          `Created commit #${newHash} on local branch 'main' with ${committedFiles.length} file(s).`,
+          `Commit #${newHash} Recorded in Local Repo`,
+          `Git bundled your staged files into a permanent tree object, generated SHA-1 hash <code class="text-emerald-300 font-mono-code">#${newHash}</code>, and moved <code class="text-emerald-300 font-mono-code">HEAD &rarr; main</code> forward. Your commit is still local until you run <code class="text-purple-300 font-mono-code">git push</code>.`,
+        );
+      }
+
+      // 7. GIT PUSH
+      async function gitPush() {
+        if (state.isAnimating) return;
+
+        const remoteHashes = new Set(state.remoteCommits.map((c) => c.hash));
+        const localHashes = new Set(state.localCommits.map((c) => c.hash));
+
+        const behindCommits = state.remoteCommits.filter(
+          (c) => !localHashes.has(c.hash),
+        );
+        if (behindCommits.length > 0) {
+          logTerminal(
+            "git push origin main",
+            `! [rejected] main -> main (fetch first: remote contains ${behindCommits.length} commit(s) you do not have locally. Run "git pull" first!)`,
+            "rose",
+          );
+          pulseZone("zone-remote", "zone-highlight-purple");
+          updateBannerAndInspector(
+            "git push [rejected]",
+            "Push rejected! Remote has new commits. Run git pull first to integrate remote changes.",
+            "Non-Fast-Forward Push Rejected",
+            `A teammate pushed commits to <strong class="text-purple-400">origin/main</strong> that you don't have in your <strong class="text-emerald-400">Local Repo</strong> yet. Run <code class="text-indigo-300 font-mono-code">git pull</code> first, then push.`,
+          );
+          return;
+        }
+
+        const unpushedCommits = state.localCommits.filter(
+          (c) => !remoteHashes.has(c.hash),
+        );
+        if (unpushedCommits.length === 0) {
+          logTerminal("git push origin main", "Everything up-to-date", "slate");
+          updateBannerAndInspector(
+            "git push",
+            "Everything up-to-date. Local Repository and Remote Repository have identical commits.",
+            "Already Synced with Origin",
+            'All commits in your <strong class="text-emerald-400">Local Repository</strong> are already present on <strong class="text-purple-400">origin/main</strong>.',
+          );
+          return;
+        }
+
+        state.isAnimating = true;
+        pulseZone("zone-local", "zone-highlight-emerald");
+        pulseZone("zone-remote", "zone-highlight-purple");
+
+        const destList = document.getElementById("list-remote");
+        const flights = unpushedCommits.map((commit) => {
+          const srcEl = document.getElementById(`local-commit-${commit.hash}`);
+          return animateCardFlight(
+            srcEl,
+            destList,
+            "rgba(139, 92, 246, 0.8)",
+            `push #${commit.hash}`,
+          );
+        });
+
+        await Promise.all(flights);
+
+        unpushedCommits.forEach((c) => {
+          state.remoteCommits.push(structuredClone(c));
+        });
+
+        state.isAnimating = false;
+        renderAllZones();
+
+        const firstHash =
+          state.remoteCommits[
+            Math.max(0, state.remoteCommits.length - unpushedCommits.length - 1)
+          ].hash;
+        const lastHash = unpushedCommits[unpushedCommits.length - 1].hash;
+        logTerminal(
+          "git push origin main",
+          `To https://github.com/org/repo.git: ${firstHash}..${lastHash}  main -> main (${unpushedCommits.length} commit(s) uploaded)`,
+          "purple",
+        );
+        updateBannerAndInspector(
+          "git push origin main",
+          `Pushed ${unpushedCommits.length} local commit(s) to Remote Repository (origin/main).`,
+          "git push — Uploading Commits to Remote",
+          `Your local commits (${unpushedCommits.map((c) => "#" + c.hash).join(", ")}) were transmitted over the network to <strong class="text-purple-400">origin/main</strong>. The remote branch pointer now matches your local <code class="text-emerald-300 font-mono-code">HEAD</code>.`,
+        );
+      }
+
+      // 8. SIMULATE TEAMMATE COMMIT ON REMOTE
+      function simulateRemoteTeammatePush() {
+        const hash = generateShortHash();
+        const sampleFile =
+          SAMPLE_FILE_POOL[Math.floor(Math.random() * SAMPLE_FILE_POOL.length)];
+        const remoteCommit = {
+          hash,
+          message: `feat(team): add ${sampleFile.name} from colleague`,
+          author: "sarah <sarah@team.dev>",
+          time: "Just now",
+          files: [
+            {
+              name: sampleFile.name,
+              status: "committed",
+              snippet: sampleFile.snippet,
+            },
+          ],
+        };
+
+        state.remoteCommits.push(remoteCommit);
+        pulseZone("zone-remote", "zone-highlight-purple");
+        renderAllZones();
+
+        logTerminal(
+          "[remote webhook]",
+          `Teammate pushed commit #${hash} ("${remoteCommit.message}") to origin/main. Run 'git pull' to sync!`,
+          "purple",
+        );
+        updateBannerAndInspector(
+          "Remote Updated",
+          `Teammate pushed #${hash} to origin/main. Your Local Repo is now 1 commit behind!`,
+          "Remote Ahead of Local — Ready for git pull",
+          `Notice the <span class="text-sky-300 font-mono-code">incoming</span> badge in <strong class="text-purple-400">Remote Repository</strong>. Click <code class="text-indigo-300 font-mono-code">git pull</code> to fetch the commit into your Local Repo and update your Working Directory files.`,
+        );
+      }
+
+      // 9. GIT PULL (Fetch from Remote + Merge into Local & Working Directory)
+      async function gitPull() {
+        if (state.isAnimating) return;
+
+        const localHashes = new Set(state.localCommits.map((c) => c.hash));
+        const incomingCommits = state.remoteCommits.filter(
+          (c) => !localHashes.has(c.hash),
+        );
+
+        if (incomingCommits.length === 0) {
+          logTerminal("git pull origin main", "Already up to date.", "slate");
+          updateBannerAndInspector(
+            "git pull",
+            'Already up to date — no new commits on origin/main. Try clicking "Simulate Teammate Push" first!',
+            "git pull — Already Up To Date",
+            'Your <strong class="text-emerald-400">Local Repository</strong> already contains every commit from <strong class="text-purple-400">origin/main</strong>. Click <strong>Simulate Teammate Push</strong> in the top bar to test pulling new remote commits!',
+          );
+          return;
+        }
+
+        state.isAnimating = true;
+        pulseZone("zone-remote", "zone-highlight-purple");
+        pulseZone("zone-local", "zone-highlight-emerald");
+
+        const localList = document.getElementById("list-local");
+        const workingList = document.getElementById("list-working");
+
+        // Step 1: Animate commits flying from Remote -> Local Repo (git fetch)
+        const fetchFlights = incomingCommits.map((commit) => {
+          const srcEl = document.getElementById(`remote-commit-${commit.hash}`);
+          return animateCardFlight(
+            srcEl,
+            localList,
+            "rgba(16, 185, 129, 0.8)",
+            `fetch #${commit.hash}`,
+          );
+        });
+        await Promise.all(fetchFlights);
+
+        incomingCommits.forEach((c) => {
+          state.localCommits.push(structuredClone(c));
+        });
+        renderAllZones();
+
+        // Step 2: Animate files updating from Local Repo -> Working Directory (git merge/checkout)
+        pulseZone("zone-working", "zone-highlight-rose");
+        const newestCommitEl = document.getElementById(
+          `local-commit-${incomingCommits[incomingCommits.length - 1].hash}`,
+        );
+        await animateCardFlight(
+          newestCommitEl,
+          workingList,
+          "rgba(56, 189, 248, 0.8)",
+          "checkout -> working tree",
+        );
+
+        incomingCommits.forEach((commit) => {
+          commit.files.forEach((f) => {
+            const existing = state.workingFiles.find((w) => w.name === f.name);
+            if (existing) {
+              existing.snippet = f.snippet;
+              existing.status = "clean";
+            } else {
+              state.workingFiles.push({
+                id:
+                  "file-" +
+                  Date.now() +
+                  "-" +
+                  Math.random().toString(36).slice(2, 5),
+                name: f.name,
+                icon: "fa-file-code",
+                status: "clean",
+                snippet: f.snippet,
+                version: 1,
+              });
+            }
+          });
+        });
+
+        state.isAnimating = false;
+        renderAllZones();
+
+        logTerminal(
+          "git pull origin main",
+          `Fast-forward: pulled ${incomingCommits.length} commit(s) from origin/main and updated Working Directory.`,
+          "emerald",
+        );
+        updateBannerAndInspector(
+          "git pull origin main",
+          `Fetched ${incomingCommits.length} commit(s) from Remote to Local Repo and updated Working Directory files.`,
+          "git pull = git fetch + git merge",
+          `<code class="text-indigo-300 font-mono-code">git pull</code> performs two actions: first it downloads missing commits from <strong class="text-purple-400">Remote</strong> into <strong class="text-emerald-400">Local Repo</strong>, then it updates your <strong class="text-rose-400">Working Directory</strong> with the new files.`,
+        );
+      }
+
+      // 10. GIT RESET & CHECKOUT COMMANDS
+      async function gitResetUnstage() {
+        if (state.isAnimating) return;
+        if (state.stagedFiles.length === 0) {
+          logTerminal(
+            "git reset HEAD",
+            "Nothing to unstage — Staging Index is already empty.",
+            "slate",
+          );
+          return;
+        }
+
+        state.isAnimating = true;
+        pulseZone("zone-staging", "zone-highlight-amber");
+        pulseZone("zone-working", "zone-highlight-rose");
+
+        const destList = document.getElementById("list-working");
+        const flights = state.stagedFiles.map((file) => {
+          const srcEl = document.getElementById(`staged-card-${file.id}`);
+          return animateCardFlight(
+            srcEl,
+            destList,
+            "rgba(244, 63, 94, 0.7)",
+            "unstage",
+          );
+        });
+
+        await Promise.all(flights);
+
+        state.stagedFiles.forEach((staged) => {
+          const workFile = state.workingFiles.find(
+            (w) => w.name === staged.name,
+          );
+          if (workFile) {
+            workFile.status = staged.previousStatus || "modified";
+          }
+        });
+
+        const count = state.stagedFiles.length;
+        state.stagedFiles = [];
+        state.isAnimating = false;
+        renderAllZones();
+
+        logTerminal(
+          "git reset HEAD",
+          `Unstaged ${count} file(s) back to Working Directory (modifications kept intact).`,
+          "amber",
+        );
+        updateBannerAndInspector(
+          "git reset HEAD",
+          `Unstaged ${count} file(s) from Staging Area back to Working Directory.`,
+          "git reset HEAD (Mixed Reset)",
+          `Moves staged changes out of the <strong class="text-amber-400">Staging Index</strong> without deleting your work. Your edits remain safely inside the <strong class="text-rose-400">Working Directory</strong>.`,
+        );
+      }
+
+      async function gitResetSoft() {
+        if (state.isAnimating) return;
+        if (state.localCommits.length <= 1) {
+          logTerminal(
+            "git reset --soft HEAD~1",
+            "Cannot reset initial root commit in sandbox.",
+            "rose",
+          );
+          return;
+        }
+
+        const lastCommit = state.localCommits[state.localCommits.length - 1];
+        state.isAnimating = true;
+
+        pulseZone("zone-local", "zone-highlight-emerald");
+        pulseZone("zone-staging", "zone-highlight-amber");
+
+        const srcEl = document.getElementById(
+          `local-commit-${lastCommit.hash}`,
+        );
+        const destList = document.getElementById("list-staging");
+        await animateCardFlight(
+          srcEl,
+          destList,
+          "rgba(245, 158, 11, 0.8)",
+          "reset --soft HEAD~1",
+        );
+
+        state.localCommits.pop();
+        lastCommit.files.forEach((f) => {
+          const existingIdx = state.stagedFiles.findIndex(
+            (s) => s.name === f.name,
+          );
+          const stagedItem = {
+            id:
+              "file-" +
+              Date.now() +
+              "-" +
+              Math.random().toString(36).slice(2, 5),
+            name: f.name,
+            icon: "fa-file-code",
+            previousStatus: "modified",
+            snippet: f.snippet,
+            version: 1,
+          };
+          if (existingIdx !== -1) state.stagedFiles[existingIdx] = stagedItem;
+          else state.stagedFiles.push(stagedItem);
+        });
+
+        state.isAnimating = false;
+        renderAllZones();
+
+        logTerminal(
+          "git reset --soft HEAD~1",
+          `Undid commit #${lastCommit.hash} ("${lastCommit.message}") and moved its changes back to Staging Area.`,
+          "amber",
+        );
+        updateBannerAndInspector(
+          "git reset --soft HEAD~1",
+          `Moved HEAD back 1 commit (#${lastCommit.hash}) and placed its changes back into Staging Area.`,
+          "git reset --soft HEAD~1",
+          `Great for fixing a premature commit! It peels back the newest commit node from <strong class="text-emerald-400">Local Repo</strong> and puts those exact file snapshots back into the <strong class="text-amber-400">Staging Area</strong>.`,
+        );
+      }
+
+      function gitCheckoutDiscard() {
+        const dirtyCount = state.workingFiles.filter(
+          (f) => f.status !== "clean",
+        ).length;
+        if (dirtyCount === 0) {
+          logTerminal(
+            "git checkout -- .",
+            "No unstaged changes in Working Directory to discard.",
+            "slate",
+          );
+          return;
+        }
+
+        // Remove untracked files and revert modified files to clean
+        state.workingFiles = state.workingFiles
+          .filter((f) => f.status !== "untracked")
+          .map((f) => ({
+            ...f,
+            status: "clean",
+            snippet: "  /* reverted to HEAD snapshot */",
+          }));
+
+        pulseZone("zone-working", "zone-highlight-rose");
+        renderAllZones();
+
+        logTerminal(
+          "git checkout -- . && git clean -fd",
+          `Discarded ${dirtyCount} unstaged change(s) in Working Directory.`,
+          "rose",
+        );
+        updateBannerAndInspector(
+          "git checkout -- .",
+          `Discarded ${dirtyCount} unstaged modification(s) in Working Directory.`,
+          "Discarding Unstaged Changes",
+          `Reverts modified files in your <strong class="text-rose-400">Working Directory</strong> back to the last committed version in <code class="text-emerald-300 font-mono-code">HEAD</code>.`,
+        );
+      }
+
+      /********************************************************************
+       * GUIDED AUTO-PLAY WORKFLOW DEMO
+       ********************************************************************/
+      async function runGuidedDemo() {
+        if (state.demoRunning || state.isAnimating) return;
+        state.demoRunning = true;
+
+        const btn = document.getElementById("demoBtn");
+        const origHtml = btn.innerHTML;
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <span>Running Tour...</span>`;
+        btn.classList.add("opacity-80", "pointer-events-none");
+
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+        logTerminal(
+          "# --- STARTING GUIDED GIT WORKFLOW TOUR ---",
+          "Watch the cards travel across all 4 Git Areas...",
+          "sky",
+        );
+        await wait(700);
+
+        // Step 1: Create a new file
+        createNewFile("payment.ts");
+        await wait(1400);
+
+        // Step 2: Stage all files (Working -> Staging)
+        await gitAddAll();
+        await wait(1400);
+
+        // Step 3: Commit staged files (Staging -> Local Repo)
+        await gitCommit("feat: implement payment & hero banner");
+        await wait(1400);
+
+        // Step 4: Push local commit to Remote (Local -> Remote)
+        await gitPush();
+        await wait(1100);
+
+        logTerminal(
+          "# --- TOUR COMPLETE! ---",
+          "Try clicking individual files or typing commands below.",
+          "sky",
+        );
+        btn.innerHTML = origHtml;
+        btn.classList.remove("opacity-80", "pointer-events-none");
+        state.demoRunning = false;
+      }
+
+      function resetEntireSandbox() {
+        initDefaultState();
+        renderAllZones();
+        clearTerminal();
+        logTerminal(
+          "git init",
+          "Sandbox reset to initial clean learning state.",
+          "sky",
+        );
+        updateBannerAndInspector(
+          "READY",
+          "Sandbox reset! Stage modified files or create new files to watch them move through Git.",
+          "How the 4 Git Areas Work Together",
+          'Files you edit live in the <strong class="text-rose-400">Working Directory</strong>. Running <code class="text-amber-300 font-mono-code">git add</code> copies their snapshot into the <strong class="text-amber-400">Staging Index</strong>. Running <code class="text-emerald-300 font-mono-code">git commit</code> records that snapshot in <strong class="text-emerald-400">Local Repo</strong>, and <code class="text-purple-300 font-mono-code">git push</code> syncs to <strong class="text-purple-400">Remote</strong>.',
+        );
+      }
+
+      /********************************************************************
+       * INTERACTIVE TERMINAL & LOGGING
+       ********************************************************************/
+      function logTerminal(cmd, output, color = "emerald") {
+        const term = document.getElementById("terminalOutput");
+        const colorMap = {
+          rose: "text-rose-400",
+          amber: "text-amber-300",
+          emerald: "text-emerald-400",
+          purple: "text-purple-300",
+          sky: "text-sky-400",
+          slate: "text-slate-400",
+        };
+
+        const timeStr = new Date().toLocaleTimeString([], {
+          hour12: false,
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        });
+        const entry = document.createElement("div");
+        entry.className =
+          "border-l-2 border-slate-800 pl-2.5 py-0.5 hover:bg-slate-900/50 rounded-r transition";
+        entry.innerHTML = `
+                <div class="flex items-center gap-2">
+                    <span class="text-slate-600 text-[10px]">[${timeStr}]</span>
+                    <span class="text-emerald-500 font-semibold">$</span>
+                    <span class="text-white font-semibold">${escapeHtml(cmd)}</span>
+                </div>
+                <div class="${colorMap[color] || "text-slate-300"} pl-4 text-[11px] leading-relaxed">${escapeHtml(output)}</div>
+            `;
+        term.appendChild(entry);
+        term.scrollTop = term.scrollHeight;
+      }
+
+      function clearTerminal() {
+        document.getElementById("terminalOutput").innerHTML = "";
+      }
+
+      function handleTerminalKey(e) {
+        if (e.key === "Enter") {
+          submitTerminalInput();
+        }
+      }
+
+      function submitTerminalInput() {
+        const input = document.getElementById("terminalInput");
+        const raw = input.value.trim();
+        if (!raw) return;
+        input.value = "";
+        runTerminalCommand(raw);
+      }
+
+      function runTerminalCommand(rawCmd) {
+        const cmd = rawCmd.trim();
+        const lower = cmd.toLowerCase();
+
+        if (lower === "clear") {
+          clearTerminal();
+          return;
+        }
+        if (lower === "git status") {
+          const untracked = state.workingFiles
+            .filter((f) => f.status === "untracked")
+            .map((f) => f.name);
+          const modified = state.workingFiles
+            .filter((f) => f.status === "modified")
+            .map((f) => f.name);
+          const staged = state.stagedFiles.map((f) => f.name);
+
+          const summary = [
+            `On branch main.`,
+            staged.length
+              ? `Changes to be committed: [${staged.join(", ")}]`
+              : `No staged changes.`,
+            modified.length
+              ? `Modified not staged: [${modified.join(", ")}]`
+              : ``,
+            untracked.length
+              ? `Untracked files: [${untracked.join(", ")}]`
+              : ``,
+          ]
+            .filter(Boolean)
+            .join(" | ");
+
+          logTerminal("git status", summary, "sky");
+          return;
+        }
+        if (lower.startsWith("git log")) {
+          const lines = [...state.localCommits]
+            .reverse()
+            .map((c) => `${c.hash} - ${c.message} (${c.time})`)
+            .join("  ||  ");
+          logTerminal(cmd, lines, "emerald");
+          return;
+        }
+        if (
+          lower === "git add ." ||
+          lower === "git add -a" ||
+          lower === "git add --all"
+        ) {
+          gitAddAll();
+          return;
+        }
+        if (lower.startsWith("git add ")) {
+          const targetName = cmd.slice(8).trim();
+          const file = state.workingFiles.find(
+            (f) => f.name.toLowerCase() === targetName.toLowerCase(),
+          );
+          if (file) {
+            gitAddSingleFile(file.id);
+          } else {
+            logTerminal(
+              cmd,
+              `fatal: pathspec '${targetName}' did not match any dirty files`,
+              "rose",
+            );
+          }
+          return;
+        }
+        if (lower.startsWith("git commit")) {
+          const msgMatch = cmd.match(/-m\s+["']([^"']+)["']/i);
+          const msg = msgMatch ? msgMatch[1] : null;
+          gitCommit(msg);
+          return;
+        }
+        if (lower.startsWith("git push")) {
+          gitPush();
+          return;
+        }
+        if (lower.startsWith("git pull")) {
+          gitPull();
+          return;
+        }
+        if (lower.includes("reset --soft")) {
+          gitResetSoft();
+          return;
+        }
+        if (lower.startsWith("git reset")) {
+          gitResetUnstage();
+          return;
+        }
+        if (lower.startsWith("touch ")) {
+          const fileName = cmd.slice(6).trim();
+          if (fileName) createNewFile(fileName);
+          return;
+        }
+        if (lower === "help") {
+          logTerminal(
+            "help",
+            'Supported commands: git status, git add ., git add <file>, git commit -m "msg", git push, git pull, git reset, git reset --soft HEAD~1, touch <file>, clear',
+            "sky",
+          );
+          return;
+        }
+
+        logTerminal(
+          cmd,
+          `Command not recognized in simulator. Type 'help' to see supported Git commands.`,
+          "rose",
+        );
+      }
+
+      /********************************************************************
+       * COMMIT INSPECTOR MODAL
+       ********************************************************************/
+      function openCommitModal(hash, source) {
+        const list =
+          source === "remote" ? state.remoteCommits : state.localCommits;
+        const commit = list.find((c) => c.hash === hash);
+        if (!commit) return;
+
+        document.getElementById("modalCommitHash").textContent =
+          `Commit #${commit.hash} (${source === "remote" ? "origin/main" : "Local HEAD"})`;
+        document.getElementById("modalCommitMsg").textContent = commit.message;
+        document.getElementById("modalCommitAuthor").textContent =
+          commit.author;
+        document.getElementById("modalCommitTime").textContent = commit.time;
+
+        const filesContainer = document.getElementById("modalCommitFiles");
+        filesContainer.innerHTML = commit.files
+          .map(
+            (f) => `
+                <div class="p-2 rounded-lg bg-slate-950 border border-slate-800 flex flex-col gap-1">
+                    <div class="flex items-center justify-between">
+                        <span class="font-mono-code font-semibold text-emerald-400 text-xs">${escapeHtml(f.name)}</span>
+                        <span class="text-[10px] font-mono-code px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-300">snapshot</span>
+                    </div>
+                    <div class="font-mono-code text-[11px] text-slate-400 truncate">${escapeHtml(f.snippet)}</div>
+                </div>
+            `,
+          )
+          .join("");
+
+        const modal = document.getElementById("commitModal");
+        modal.classList.remove("hidden");
+        modal.classList.add("flex");
+      }
+
+      function closeCommitModal() {
+        const modal = document.getElementById("commitModal");
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+      }
+
+      function escapeHtml(str) {
+        return String(str)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      // Initialize on load
+      window.addEventListener("DOMContentLoaded", () => {
+        initDefaultState();
+        renderAllZones();
+        logTerminal(
+          "git status",
+          "Initialized Git Visualizer on branch main. 1 modified file (index.html), 1 untracked file (app.js).",
+          "sky",
+        );
+      });
+    </script>
+  </body>
+</html>
